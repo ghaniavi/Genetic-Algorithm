@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style>
+            table thead th td tr{ border: 1px solid #000; }           
+        </style>
+    </head>
+    <body style="display:flex; ">
+        <div style="flex: 3">
+            <h1>Genetics Algorithm</h1>
+            <hr>
+
+                <div>
+                    <label id="currentFn"></label>
+                </div>
+                <br>
+
+                <div id="formVariable">
+                </div>
+
+                <br>
+
+                <div>
+                    <label>Bit Length</label>
+                    <input id="bitLength" type="number" min=1 value=16>
+                </div>
+        
+                <div>
+                    <label>Mutation Rate</label>
+                    <input id="mutationRate" type="number" value=1 min="1" max="100">
+                </div>
+                <div>
+                    <label>Max Generation</label>
+                    <input id="maxGeneration" type="number" value=100 min=1>
+                </div>
+                <div>
+                    <label>Max Individual in Population</label>
+                    <input id="maxIndividualInPopulation" type="number" value=50 min=1>
+                </div>
+                <br>
+                <label>Select find formula values : </label>
+                <div>
+                    <input type="radio" id="isMax" name="mode" value="max">Maximization<br>
+                    <input type="radio" id="isMin" name="mode" checked value="min">Minimization<br>
+                </div>
+        
+                <br>
+                <label>Select selection method : </label>
+                <div>
+                    <input type="radio" name="selection" id="random">Random<br>
+                    <input type="radio" name="selection" id="roulette">Roulette<br>
+                    <input type="radio" name="selection" checked id="tournament">Tournament<br>
+                </div>
+
+                <button onclick="execute()" type="button" id="executeBtn">Execute</button>
+
+                <div id="result">
+                </div>
+        </div>
+        <div style="flex: 7">
+            <h1 id="currentGeneration">Current Generation</h1>
+            <table border="1">
+                <tr>
+                    <thead>
+                        <td>No</td>
+                        <td>x1-value</td>
+                        <td>x2-value</td>
+                        <td>x1-bit</td>
+                        <td>x2-bit</td>
+                        <td>Fitness</td>
+                        <td>Probability</td>
+                    </thead>
+                </tr>
+                <tbody id="generation">
+                </tbody>
+            </table>
+        </div>
+    </body>
+    <script>
+    
+        //#region CoreNumber
+        var CoreNumber = (function(){
+            return {
+                getRandomFloatNumber: function(min, max, trailZeros){
+                    //Convert to float
+                    if(!this.isFloat(min)){
+                        min = this.getFloatNumber(min, trailZeros)
+                    }
+            
+                    if(!this.isFloat(max)){
+                        max = this.getFloatNumber(max, trailZeros)
+                    }
+            
+            
+                    let randomNumber = (Math.random() * (max - min) + min).toPrecision(trailZeros)
+
+                    let randomNumberDecimal = this.countDecimals(randomNumber)
+                    if( randomNumberDecimal < trailZeros){
+                        let diff = trailZeros - randomNumberDecimal
+                        randomNumber += '0'.repeat(diff)
+                    }
+
+                    return randomNumber
+                },
+
+                
+                getRandomBinary(bitLength = 4){
+                    let arrBinary = []
+                    for (let index = 0; index < bitLength; index++) {
+                    arrBinary.push(Math.random() > 0.5 ? 1 : 0)
+                    }
+                    return arrBinary
+                },
+
+                getNumberFromBinary(binary, min, max){
+                    if(max == min){
+                        return max
+                    }
+
+                    let binaryValue = parseInt(binary.join(''), 2)
+                    return min + (((max - min) / (Math.pow(2, binary.length) - 1)) * binaryValue)
+                },
+
+                isFloat: function(n){
+                    return Number(n) === n && n % 1 !== 0;
+                },
+
+                getFloatNumber: function(number, trailZeros){
+                    return Number.parseFloat(number.toFixed(trailZeros));
+                },
+                
+            
+                getRandomNumber: function(min, max){
+                    return Math.floor(Math.random() * (max - min) + min)
+                },
+
+                countDecimals: function (number) {
+                    if(Math.floor(number.valueOf()) === number.valueOf()) return 0;
+                    return number.toString().split(".")[1].length || 0; 
+                }
+            }
+        }())
+        //#endregion
+
+        //#region Individual
+        class Individual{
+
+            constructor(individualParameter){
+
+                //Attribute declartion
+                this.fitness = null
+                this.probability = 0
+                this.genomes = []
+                this.values = []
+                this.variables = []
+                this.parameter = individualParameter
+
+                this.initialize(this.parameter)
+            }
+
+
+            initialize(individualParameter){
+                this.variables.push(...individualParameter.variables)
+
+                //Get Random Real
+                // let trailZeros = individualParameter.numberOfTrailingZeros >= 0 ? individualParameter.numberOfTrailingZeros : 1;
+
+                for(let variable of this.variables){
+                    this.genomes.push(CoreNumber.getRandomBinary(individualParameter.bitLength))
+                }
+
+                this.values.push(this.getX(1))
+                this.values.push(this.getX(2))
+            }
+
+            replaceGenome(newGenomes){
+                this.genomes = newGenomes
+            }
+
+            renewValues(){
+                for (let index = 0; index < this.genomes.length; index++) {
+                    const genome = this.genomes[index];
+                    this.values[index] = CoreNumber.getNumberFromBinary(genome, this.variables[index].min, this.variables[index].max)
+                }
+            }
+
+
+            //#region attribute
+            getX(number){
+                if(this.genomes.length < number){
+                    number = this.genomes.length - 1
+                }else if(number < 1){
+                    number = 0
+                }else{
+                    number = number - 1
+                }
+                return CoreNumber.getNumberFromBinary(this.genomes[number], this.variables[number].min, this.variables[number].max)
+            }
+
+            mate(withAnotherIndividual, mutationRate){
+                let newChild = this.crossOver(withAnotherIndividual)
+                newChild.mutation(mutationRate)
+                newChild.renewValues()
+                return newChild
+            }
+
+            crossOver(withAnotherIndividual){
+                let newChild = new Individual(this.parameter)
+
+                let newChildGenome  = []
+                for(let genomeIndex = 0; genomeIndex < this.genomes.length; genomeIndex++){
+                    newChildGenome[genomeIndex] = []
+                    let midpoint = CoreNumber.getRandomNumber(0, this.parameter.bitLength - 1)
+                    for (let bitIndex = 0; bitIndex < this.genomes[genomeIndex].length; bitIndex++) {
+                        if(bitIndex > midpoint){
+                            newChildGenome[genomeIndex][bitIndex] = this.genomes[genomeIndex][bitIndex]
+                        }else{
+                            newChildGenome[genomeIndex][bitIndex] = withAnotherIndividual.genomes[genomeIndex][bitIndex]
+                        }
+                    }
+                }
+                newChild.replaceGenome(newChildGenome)
+
+                return newChild
+            }
+
+            mutation(mutationRate){
+                for(let genome of this.genomes){
+                    for (let index = 0; index < genome.length; index++) {
+                        let random = CoreNumber.getRandomNumber(0, 100)
+                        if(random <= mutationRate){
+                            genome[index] = !genome[index] + 1 - 1
+                        }
+                        
+                    }
+                }
+            }
+            //#endregion
+        }
+        //#endregion
+
+        //#region Population
+        class Population{
+            constructor(fitnessFn, maxIndividualInPopulation, isMaximization, individualParameter){
+                this.fitnessFn = fitnessFn;
+                this.isMaximization = isMaximization;
+                this.individuals = [];
+                this.initialize(maxIndividualInPopulation, individualParameter)
+            }
+
+            initialize(maxIndividualInPopulation, individualParameter){
+                for (let index = 0; index < maxIndividualInPopulation; index++) {
+                    let newIndividual = new Individual(individualParameter)
+                    this.individuals.push(newIndividual)
+                }
+            }
+
+            evaluate(){
+                for(let individual of this.individuals){
+                    individual.fitness = this.fitnessFn(individual.getX(1), individual.getX(2))
+                }
+            }
+
+            getArrayOfFitness(){
+                let arrayOfFitness = [];
+                this.individuals.forEach(individual => {
+                    arrayOfFitness.push(individual.fitness)
+                });
+
+                return arrayOfFitness;
+            }
+
+            getMaxFitness(){
+                return Math.max(...this.getArrayOfFitness())
+            }
+
+            getMinFitness(){
+                return Math.min(...this.getArrayOfFitness())
+            }
+
+            getSumFitness(){
+                if(this.isMaximization){
+                    return this.getArrayOfFitness().reduce((a,b) => a + b )
+                }else{
+                    let maxFitness = this.getMaxFitness()
+                    let sumFitness = 0;
+                    for(let fitness of this.getArrayOfFitness()){
+                        sumFitness += maxFitness - fitness
+                    }
+                    return sumFitness
+                }
+            }
+
+            isTheBest(deltaF){
+                if(this.isMaximization){
+                    return this.getMaxFitness() >= deltaF
+                }else{
+                    return this.getMinFitness() <= deltaF
+                }
+            }
+
+            getIndividual(index = 0){
+                if(index < 0){
+                    index = 0
+                }else if(index > this.individuals.length - 1){
+                    index = this.individuals.length - 1
+                }
+                return this.individuals[index]
+            }
+
+            getRandomIndividual(){
+                return this.individuals[CoreNumber.getRandomNumber(0, this.individuals.length - 1)]
+            }
+
+            getRandomIndividualIndex(){
+                return CoreNumber.getRandomNumber(0, this.individuals.length - 1)
+            }
+
+            popIndividual(index){
+                return this.individuals.splice(index, 1)
+            }
+
+
+            replace(newIndividuals){
+                this.individuals = []
+                this.individuals = newIndividuals
+            }
+        }
+        //#endregion
+
+        //#region Generation
+        class Generation{
+            constructor(gaParameter){
+                this.fitnessFn = gaParameter.fitnessFn
+                this.maxGeneration = gaParameter.maxGeneration
+
+                this.selectionMethod = {
+                    usingRoulette: gaParameter.isUsingRouletteSelection,
+                    usingTournament: gaParameter.isUsingTournamentSelection,
+                    usingPureRandom: gaParameter.isUsingRandomSelection
+                }
+                this.recombinationMethod = {
+                    mutationRate: gaParameter.mutationRate
+                }
+
+                this.gaParameter = gaParameter
+
+                this.isRunning = false
+
+                this.matingPool = []
+                this.MAX_GENERATION = 20000
+                this.population = new Population(gaParameter.fitnessFn, gaParameter.maxIndividualInPopulation, gaParameter.isMaximization, gaParameter.individualParameter)
+            }
+
+            //Run
+            run(){
+                this.removeResult()
+                this.isRunning = true
+                if(this.gaParameter.isUsingDeltaF){
+                    let currentGeneration = 0
+                    console.log(this.gaParameter)
+                    do{     
+                        currentGeneration++
+                        setTimeout(() => {
+                            document.getElementById("currentGeneration").innerHTML = "Current Generation "+(currentGeneration+1)
+                            this.populate()
+                            let fittestFitness = this.population.isMaximization ? this.population.getMaxFitness() : this.population.getMinFitness()
+                            this.printResult(fittestFitness)
+                        }, 20);
+                    }while(!this.population.isTheBest(this.gaParameter.deltaF) && currentGeneration < this.MAX_GENERATION)
+
+                }else{
+                    for (let index = 0; index < this.maxGeneration; index++) {
+                        setTimeout(() => {
+                            document.getElementById("currentGeneration").innerHTML = "Current Generation "+(index+1)
+                            this.populate()
+                            let fittestFitness = this.population.isMaximization ? this.population.getMaxFitness() : this.population.getMinFitness()
+                            this.printResult(fittestFitness)
+                        }, 20);
+                    }
+
+                }
+                this.isRunning = false
+                // document.getElementById("executeBtn").disabled = false
+            }
+
+            populate(){
+                let childrens = []
+                let parents = []
+                
+                this.evaluatePopulation()
+                parents = this.selection()
+                this.printToTable()
+                while(childrens.length < this.population.individuals.length){
+                    // this.matingPool(...parents)
+                    childrens.push(this.recombination(parents))
+                }
+
+                //Replace and evalute
+                this.population.replace(childrens)
+                this.population.evaluate()
+            }
+
+            //Evaluate
+            evaluatePopulation(){
+                this.population.evaluate()
+            }
+
+            //#region Selection
+            selection(){
+            if(this.selectionMethod.usingRoulette){
+                return this.rouletteSelection()
+            } else if(this.selectionMethod.usingTournament){
+                return this.tournamentSelection()
+            }else if(this.selectionMethod.usingPureRandom){
+                return this.pureRandomSelection()
+            }
+            }
+
+            rouletteSelection(){
+                //Set probability roulette
+                let sumOfProbability = 0
+                let sumFitness = this.population.getSumFitness()
+                let maxFitness = this.population.getMaxFitness()
+                let parents = []
+                
+                let bias = 0.01 // So number with 0 probability can have a chance
+                for(let individual of this.population.individuals){
+                    let fitness = this.population.isMaximization ? individual.fitness : (maxFitness - individual.fitness)
+                    individual.probability = sumOfProbability + (fitness / sumFitness) + bias
+                    sumOfProbability += individual.probability
+                }
+
+                let random = Math.random() * sumOfProbability
+                // let random = CoreNumber.getRandomFloatNumber(0, 1, 2);
+
+                //Roulette begin
+                let tempPopulationIndividuals = Object.assign([], this.population.individuals) //deep copy
+                for (let index = 0; index < 2; index++) {
+                    let bestIndividualIndex = 0
+                    for (let index = 0; index < tempPopulationIndividuals.length; index++) {
+                        const individual = tempPopulationIndividuals[index];
+                        if(individual.probability > random){
+                            bestIndividualIndex = index
+                            break;
+                        }
+                    }
+                    parents.push(tempPopulationIndividuals.splice(bestIndividualIndex, 1)[0])
+                }
+
+                return parents
+            }
+            
+            tournamentSelection(){
+                let tempPopulationIndividuals = Object.assign([], this.population.individuals) //deep copy
+                let parents = []
+                
+                for (let index = 0; index < 2; index++) { //do it twice to get best and better individual
+                    let bestIndividualIndex = -1
+                    for(let i = 0; i < tempPopulationIndividuals.length; i++){
+                        let currentIndividualIndex = CoreNumber.getRandomNumber(0, tempPopulationIndividuals.length -1)
+                        let currentIndividual = tempPopulationIndividuals[currentIndividualIndex]
+                        if(bestIndividualIndex == -1){
+                            bestIndividualIndex = currentIndividualIndex
+                        }else{
+                            let fitterFitness = this.population.isMaximization ?  (currentIndividual.fitness > tempPopulationIndividuals[bestIndividualIndex].fitness) : (currentIndividual.fitness < tempPopulationIndividuals[bestIndividualIndex].fitness)
+                            if(fitterFitness){
+                                bestIndividualIndex = currentIndividualIndex
+                            }
+                        }
+                    }
+                    parents.push(tempPopulationIndividuals.splice(bestIndividualIndex, 1)[0]) //Do pop for higher chance of variety
+                }
+
+                return parents
+            }
+
+            pureRandomSelection(){
+                let tempPopulationIndividuals = Object.assign([], this.population.individuals) //deep copy
+                let parents = []
+                for (let index = 0; index < 2; index++) {
+
+                    let randomIndex = tempPopulationIndividuals[CoreNumber.getRandomNumber(0, tempPopulationIndividuals.length -1)]
+                    parents.push(tempPopulationIndividuals.splice(randomIndex, 1)[0]) //Do pop for higher chance of variety
+                }
+
+                return parents
+            }
+            //#endregion
+
+            //#region recomebination / offspting
+            recombination(parents){
+                return parents[0].mate(parents[1], this.recombinationMethod.mutationRate)
+            }
+            //#endregion
+
+            //#region print
+            async printToTable(){
+                let number = 1;
+                document.getElementById('generation').innerHTML = ''
+                for(let individual of this.population.individuals){
+                    let wrapper = document.createElement('tr')
+                    let numberEl = document.createElement('td')
+                    numberEl.innerHTML = number
+                    let x1ValEl = document.createElement('td')
+                    x1ValEl.innerHTML = individual.values[0]
+                    let x2ValEl = document.createElement('td')
+                    x2ValEl.innerHTML = individual.values[1]
+                    let x1BitEl = document.createElement('td')
+                    x1BitEl.innerHTML = individual.genomes[0]
+                    let x2BitEl = document.createElement('td')
+                    x2BitEl.innerHTML = individual.genomes[1]
+                    let fitnessEl = document.createElement('td')
+                    fitnessEl.innerHTML = individual.fitness
+                    wrapper.appendChild(numberEl)
+                    wrapper.appendChild(x1ValEl)
+                    wrapper.appendChild(x2ValEl)
+                    wrapper.appendChild(x1BitEl)
+                    wrapper.appendChild(x2BitEl)
+                    wrapper.appendChild(fitnessEl)
+
+                    
+                    if(this.selectionMethod.usingRoulette){
+                        let probabilityEl = document.createElement('td')
+                        probabilityEl.innerHTML = individual.probability
+                        wrapper.appendChild(probabilityEl)
+                    }
+
+                    document.getElementById('generation').appendChild(wrapper)
+                    number++;
+                }
+
+            }
+
+            printResult(result){
+                let resultEl = document.getElementById("result")
+                resultEl.innerHTML = "Hasil Generasi Terbaik : <b>"+result+"</b>"
+            }
+
+            removeResult(){
+                let resultEl = document.getElementById("result")
+                resultEl.innerHTML = ""
+            }
+            //#endregion
+        }
+        //#endregion
+
+
+        //#region Main
+            //Run your javascript here
+            //This genetics algorithm only work to find something with 2 parameter heuristics functions
+            console.log("Starting Genetics Algorithm");
+
+            /**
+             * Notes:
+             *  - An individual contains 2 variables (in this case would be x1 and x2)
+             *  - This program could be more dynamic as we developed it
+             *  - Customize as you can but consequence awaits
+             */
+
+            let fitnessFn = function(x1,x2) {
+                return ( (4 - (2.1 * Math.pow(x1,2)) + ((Math.pow(x1,4)) / 3) ) * (Math.pow(x1,2)) + (x1 * x2) + ((-4 + (4 * Math.pow(x2, 2)) ) * (Math.pow(x2,2))) )
+            }
+            let currentFunction = fitnessFn.toString()
+            document.getElementById("currentFn").innerHTML = currentFunction
+
+            // [1, 1, 1, 0]
+            // [1, 0, 1, 0]
+            // 0.84901691815272
+
+            console.log(fitnessFn(-1.4, -1.7333333333333334))
+
+            let minx1 = -3
+            let maxx1 = 3
+            let minx2 = -2
+            let maxx2 = 2
+            let bitLength = 100;
+
+            let deltaF = -0.9
+
+            let individualParameter = {
+                variables: [
+                    {
+                        min: minx1,
+                        max: maxx1,
+                    },
+                    {
+                        min: minx2,
+                        max: maxx2,
+                    }
+                ],
+                bitLength: bitLength
+            }
+
+            //Generate Form variables
+            let formVariableComponent = document.createElement('div');
+            for (let index = 0; index < individualParameter.variables.length; index++) {
+                const element = individualParameter.variables[index];
+                let labelMin = document.createElement('label')
+                labelMin.textContent = "Min X"+(index+1)
+                let inputlMin = document.createElement('input')
+                inputlMin.id = "minx"+(index+1)
+                inputlMin.value = element.min
+                let labelMax = document.createElement('label')
+                labelMax.textContent = "Max X"+(index+1)
+                let inputlMax = document.createElement('input')
+                inputlMax.id = "maxx"+(index+1)
+                inputlMax.value = element.max
+                
+                formVariableComponent.appendChild(labelMin)
+                formVariableComponent.appendChild(document.createElement('br'))
+                formVariableComponent.appendChild(inputlMin)
+                formVariableComponent.appendChild(document.createElement('br'))
+                formVariableComponent.appendChild(labelMax)
+                formVariableComponent.appendChild(document.createElement('br'))
+                formVariableComponent.appendChild(inputlMax)
+                formVariableComponent.appendChild(document.createElement('br'))
+            }
+            document.getElementById("formVariable").appendChild(formVariableComponent)
+
+
+            function execute(){
+                console.log("test")
+                //Initiate custom variables
+                let mutationRate = 5; //1 - 100%
+                let maxGeneration = 84; // number of generation
+                let maxIndividualInPopulation = 50
+
+                individualParameter.bitLength = document.getElementById("bitLength").value
+
+                for (let index = 0; index < individualParameter.variables.length; index++) {
+                    const max = document.getElementById("maxx"+(index+1)).value
+                    const min = document.getElementById("minx"+(index+1)).value
+                    individualParameter.variables[index].min = Number.parseInt(min)
+                    individualParameter.variables[index].max = Number.parseInt(max)
+                }
+
+                //Put it into 1 object to simplified parameter  
+                let gaParameter = {
+                    maxIndividualInPopulation:Number.parseInt(document.getElementById("maxIndividualInPopulation").value),
+                    fitnessFn: fitnessFn,
+                    individualParameter: individualParameter,
+
+                    //Selection
+                    isMaximization: document.getElementById("isMax").checked,
+                    isUsingRouletteSelection: document.getElementById("roulette").checked,
+                    isUsingTournamentSelection: document.getElementById("tournament").checked,
+                    isUsingRandomSelection: document.getElementById("random").checked,
+                    
+                    //Combination
+                    mutationRate: Number.parseInt(document.getElementById("mutationRate").value),
+                    
+                    //Finish State
+                    maxGeneration: Number.parseInt(document.getElementById("maxGeneration").value),
+                    // isUsingDeltaF: true,
+                    // deltaF: -0.9
+                }
+
+                console.log(gaParameter)
+
+                let generation = new Generation(gaParameter)
+                generation.run()
+                document.getElementById("executeBtn").disabled = generation.isRunning
+
+
+                //End
+                generation.evaluatePopulation()
+                console.log(generation.population)
+            }
+        //#endregion
+    </script>
+</html>
